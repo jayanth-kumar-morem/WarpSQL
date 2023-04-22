@@ -73,8 +73,8 @@ RUN set -ex \
     && rm -rf /build \
     && sed -r -i "s/[#]*\s*(shared_preload_libraries)\s*=\s*'(.*)'/\1 = 'timescaledb,\2'/;s/,'/'/" /usr/local/share/postgresql/postgresql.conf.sample
 
-# Add Citus to shared_preload_libraries
-RUN echo "shared_preload_libraries = 'citus,timescaledb'" >> /usr/local/share/postgresql/postgresql.conf.sample
+# Update shared_preload_libraries
+RUN echo "shared_preload_libraries = 'citus,timescaledb,postgis'" >> /usr/local/share/postgresql/postgresql.conf.sample
 
 # Adding PG Vector
 
@@ -171,4 +171,3 @@ RUN set -ex \
     && cd ~ \
     && rm -rf /tmp/postgis.tar.gz /tmp/postgis-${POSTGIS_VERSION} \
     && apk del .postgis-deps .postgis-build-deps
-    

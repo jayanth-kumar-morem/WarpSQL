@@ -52,6 +52,7 @@ ARG PG_VERSION
 FROM bitnami/postgresql:${PG_VERSION}
 ARG PG_VERSION
 ARG CITUS_VERSION
+ARG POSTGIS_VERSION
 
 LABEL maintainer="Timescale https://www.timescale.com"
 
@@ -81,6 +82,7 @@ RUN set -ex \
             cmake \
             wget \
             postgis \
+            postgresql-${PG_VERSION}-postgis-${POSTGIS_VERSION} \
     && mkdir -p /build/ \
     && git clone https://github.com/timescale/timescaledb /build/timescaledb \
     \
