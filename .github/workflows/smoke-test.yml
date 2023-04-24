@@ -63,7 +63,7 @@ jobs:
               psql -c "SELECT * FROM test_distributed_table;"
 
               echo "Test PostGIS Extension"
-              psql -c "CREATE EXTENSION postgis;"
+              psql -c "CREATE EXTENSION postgis;" || true
               psql -c "SELECT PostGIS_Version();"
 
               echo "Test PostGIS Geometry Function"
