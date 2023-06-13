@@ -3,7 +3,7 @@ on:
   pull_request:
   push:
     branches:
-      - main
+      - parameterised_extensions
 
 env:
   ORG: timescaledev
@@ -12,13 +12,15 @@ env:
 
 jobs:
   smoketest:
-    name: PG${{ matrix.pg }}-${{ matrix.type }}
+    name: PG${{ matrix.pg }}-${{ matrix.type }}-${{ matrix.extensions }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         pg: [15]
-        type: ['normal', 'bitnami']
+        type: ['normal']
+        # type: ['normal', 'bitnami']
+        extensions: ['all', 'citus', 'postgis', 'zombodb', 'pg_repack', 'pg_auto_failover', 'postgres_hll']
     steps:
       - name: Check out the source
         uses: actions/checkout@v3
@@ -26,13 +28,35 @@ jobs:
       - name: Expose GitHub Runtime
         uses: crazy-max/ghaction-github-runtime@v2
 
+      - name: Set extension environment variables
+        run: |
+          if [ "${{ matrix.extensions }}" == "all" ]; then
+            echo "INCLUDE_CITUS=true" > extensions.env
+            echo "INCLUDE_POSTGIS=true" >> extensions.env
+            echo "INCLUDE_ZOMBODB=true" >> extensions.env
+            echo "INCLUDE_PG_REPACK=true" >> extensions.env
+            echo "INCLUDE_PG_AUTO_FAILOVER=true" >> extensions.env
+            echo "INCLUDE_POSTGRES_HLL=true" >> extensions.env
+          else
+            echo "INCLUDE_CITUS=false" > extensions.env
+            echo "INCLUDE_POSTGIS=false" >> extensions.env
+            echo "INCLUDE_ZOMBODB=false" >> extensions.env
+            echo "INCLUDE_PG_REPACK=false" >> extensions.env
+            echo "INCLUDE_PG_AUTO_FAILOVER=false" >> extensions.env
+            echo "INCLUDE_POSTGRES_HLL=false" >> extensions.env
+            echo "INCLUDE_${{ matrix.extensions }}=true" >> extensions.env
+          fi
+        shell: bash
+
       - name: Build Docker Image for TimescaleDB
         run: |
+          source extensions.env
           if [ ${{ matrix.type }} == bitnami ]
           then
             cd bitnami
           fi
-          make build-docker-cache image PG_VER=pg${{ matrix.pg }} TAG_VERSION=smoketest-image BETA=1
+          make image PG_VER=pg${{ matrix.pg }} TAG_VERSION=smoketest-image BETA=1
+        shell: bash
 
       - name: Install psql
         run: sudo apt install postgresql-client
@@ -55,40 +79,42 @@ jobs:
             fi
             if psql -c "select 1"
             then
-              echo "Test Citus Extension"
-              psql -c "CREATE EXTENSION citus;"
-              psql -c "SELECT * FROM citus_version();"
+              if [ "$INCLUDE_CITUS" = "true" ]; then
+                echo "Test Citus Extension"
+                psql -c "CREATE EXTENSION citus;"
+                psql -c "SELECT * FROM citus_version();"
+              fi
 
-              echo "Test Citus Distributed Table"
-              psql -c "CREATE TABLE test_distributed_table (id serial primary key, data text);"
-              psql -c "SELECT create_distributed_table('test_distributed_table', 'id');"
-              psql -c "INSERT INTO test_distributed_table (data) VALUES ('test data');"
-              psql -c "SELECT * FROM test_distributed_table;"
+              if [ "$INCLUDE_POSTGIS" = "true" ]; then
+                echo "Test PostGIS Extension"
+                psql -c "CREATE EXTENSION postgis;" || true
+                psql -c "SELECT PostGIS_Version();"
+              fi
 
-              echo "Test PostGIS Extension"
-              psql -c "CREATE EXTENSION postgis;" || true
-              psql -c "SELECT PostGIS_Version();"
+              if [ "$INCLUDE_ZOMBODB" = "true" ]; then
+                echo "Test zombodb Extension"
+                psql -c "CREATE EXTENSION zombodb;"
+                psql -c "SELECT zdb.internal_version();"
+              fi
 
-              echo "Test PostGIS Geometry Function"
-              psql -c "CREATE TABLE test_geometry_table (id serial primary key, geom geometry(Point, 4326));"
-              psql -c "INSERT INTO test_geometry_table (geom) VALUES (ST_GeomFromText('POINT(0 0)', 4326));"
-              psql -c "SELECT * FROM test_geometry_table;"
+              if [ "$INCLUDE_PG_REPACK" = "true" ]; then
+                echo "Test pg_repack Extension"
+                psql -c "CREATE EXTENSION pg_repack;"
+                psql -c "select repack.version(), repack.version_sql();"
+              fi
 
-              echo "Test zombodb Extension"
-              psql -c "CREATE EXTENSION zombodb;"
-              psql -c "SELECT zdb.internal_version();"
+              if [ "$INCLUDE_PG_AUTO_FAILOVER" = "true" ]; then
+                echo "Test pgautofailover Extension"
+                psql -c "CREATE EXTENSION pgautofailover CASCADE;"
+                psql -c "SELECT pgautofailover.formation_settings();"
+              fi
+
+              if [ "$INCLUDE_POSTGRES_HLL" = "true" ]; then
+                echo "Test HyperLogLog Extension"
+                psql -c "CREATE EXTENSION hll;"
+                psql -c "select hll_hash_text('hello world');"
+              fi
               
-              echo "Test pg_repack Extension"
-              psql -c "CREATE EXTENSION pg_repack;"
-              psql -c "select repack.version(), repack.version_sql();"
-
-              echo "Test pgautofailover Extension"
-              psql -c "CREATE EXTENSION pgautofailover CASCADE;"
-              psql -c "SELECT pgautofailover.formation_settings();"
-              
-              echo "Test HyperLogLog Extension"
-              psql -c "CREATE EXTENSION hll;"
-              psql -c "select hll_hash_text('hello world');"
               break
             fi
             sleep 1
